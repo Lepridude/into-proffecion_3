@@ -83,7 +83,8 @@ def calculate_transactions(path: str, encoding: str, sep: str) -> dict:
     simple_mean = valid.groupby("Товар")["Цена"].mean()
     weighted_cost = (valid["Цена"] * valid["Кол-во"]).groupby(valid["Товар"]).sum()
     total_quantity = valid.groupby("Товар")["Кол-во"].sum()
-    weighted_mean = weighted_cost / total_quantity.replace(0, pd.NA)
+    weighted_denominator = total_quantity.where(total_quantity.ne(0))
+    weighted_mean = weighted_cost.div(weighted_denominator)
     prices = pd.DataFrame({
         "Простая средняя цена": simple_mean,
         "Средневзвешенная цена": weighted_mean,
@@ -116,9 +117,16 @@ def compare_segments(path_full: str, path_recent: str, encoding: str, sep: str, 
         missing = [col for col in required if col not in frame.columns]
         if missing:
             raise SystemExit(f"В выгрузке сегментов ({label}) отсутствуют поля {missing}")
+        if frame[required].isna().any().any():
+            raise SystemExit(f"В выгрузке сегментов ({label}) есть пустые значения")
+        if frame["Товар"].duplicated().any():
+            duplicate_items = frame.loc[frame["Товар"].duplicated(), "Товар"].astype(str).head(5).tolist()
+            raise SystemExit(
+                f"В выгрузке сегментов ({label}) несколько строк на один товар: {duplicate_items}"
+            )
 
-    full = full[required].drop_duplicates("Товар").copy()
-    recent = recent[required].drop_duplicates("Товар").copy()
+    full = full[required].copy()
+    recent = recent[required].copy()
     full["Сегмент за весь период"] = (
         full["Группа ABC"].astype(str).str.strip() + full["Группа XYZ"].astype(str).str.strip()
     )
