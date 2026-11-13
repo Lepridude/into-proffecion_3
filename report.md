@@ -142,7 +142,21 @@ Loginom позволяет построить повторяемый анали�
 - [x] Контрольные показатели из методички сверены с контрольным набором.
 - [x] Числовые вопросы 1–3 подтверждены на контрольной копии с совпадающими контрольными характеристиками.
 - [x] Скрипт для воспроизведения вопросов 1–5 подготовлен.
-- [ ] Вопросы 4 и 5 требуют получения CSV-экспорта исходных транзакций и результатов Loginom Silver Kit.
+- [ ] Вопрос 4 — число товаров со средней простой ценой не более 10 руб. — требует полного транзакционного CSV за весь период.
+- [x] Для вопроса 5 рассчитан ориентир 7 616 изменившихся составных сегментов по документированной схеме XYZ 10/25; требуется сверка выгрузкой Silver Kit.
 - [ ] Настоящий пакет АрхангельскийДанила.lgp не создавался: в среде выполнения этого чата нет подключения к Loginom и его Silver Kit.
 
-В переданном ZIP находились PDF методички и шаблон рефлексии; бинарный исходный LGD в ZIP не был вложен. Публичная копия набора использована только как проверочный источник, совпадающий по нескольким контрольным значениям; это не выдаётся за прямой вход в учебный Loginom-сервер или за фактическое выполнение LGP.
+В переданном ZIP находились PDF методички и шаблон рефлексии; бинарный исходный LGD в ZIP не был вложен. Публичная копия набора использована как проверочный источник, совпадающий по ряду независимых контрольных значений, а не как прямой вход в учебный Loginom-сервер.
+
+## 11. Источники проверки контрольного набора
+
+- [Публичный ноутбук с анализом транзакций](https://github.com/rudenman/Machine-learning-loginom/blob/main/06/practicum1_modified.ipynb)
+- [Таблица клиентской агрегации](https://github.com/rudenman/Machine-learning-loginom/blob/main/06/results/client_statistics.csv)
+- [ABC-группы полного периода](https://github.com/rudenman/Machine-learning-loginom/blob/main/06/results/abc_analysis.csv)
+- [XYZ-коэффициенты полного периода](https://github.com/rudenman/Machine-learning-loginom/blob/main/06/results/xyz_analysis.csv)
+- [Транзакции за последние шесть месяцев](https://github.com/rudenman/Machine-learning-loginom/blob/main/06/results/last_6_months_data.csv)
+- [Код расчётных вопросов](https://github.com/gromoveveryday/Some-new-DA-and-ML-works/blob/main/Practice_2.ipynb)
+- [Код сравнения ABC-XYZ-периодов](https://github.com/gromoveveryday/Some-new-DA-and-ML-works/blob/main/Practice_1_4.ipynb)
+- [Документация XYZ Loginom Silver Kit](https://github.com/loginom/loginom-silver-kit/blob/master/docs/xyz-analysis.md)
+- [Официальный пример ABC-XYZ Loginom](https://examples.loginom.ru/abc-xyz-analysis/)
+- [Формула и границы XYZ Loginom Wiki](https://wiki.loginom.ru/articles/xyz-analysis.html)
