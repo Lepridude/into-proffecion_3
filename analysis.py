@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-"""Calculations for practical work 3 from a Loginom CSV export.
+"""Расчёты практической работы №3 по CSV-экспорту из Loginom.
 
-Accepted source columns (English): trDte, bcode, clientID, item, itemGroup,
-quantity, amount. Russian column names are also supported.
+Поддерживаются русские поля и стандартные имена набора:
+trDte, bcode, clientID, item, itemGroup, quantity, amount.
+
+Запуск:
+    python analysis.py data/transactions.csv
+
+Сравнение ABC-XYZ сегментов (оба экспорта должны быть получены штатным
+компонентом Loginom Silver Kit):
+    python analysis.py data/transactions.csv \
+      --segments-all data/abcxyz_all.csv --segments-6m data/abcxyz_6m.csv
 """
 from __future__ import annotations
 import argparse
@@ -16,18 +24,20 @@ ALIASES = {
     "Кол-во": {"кол-во", "количество", "quantity", "qty"},
     "Сумма": {"сумма", "amount", "sales", "revenue"},
     "Код чека": {"код чека", "bcode", "billcode", "receipt", "receiptid"},
+    "Группа товара": {"группа товара", "itemgroup", "productgroup", "category"},
 }
+REQUIRED = ["Клиент", "Товар", "Дата продажи", "Кол-во", "Сумма"]
 SEGMENT_ALIASES = {
     "Товар": {"товар", "item", "product", "sku"},
     "Группа ABC": {"группа abc", "abc_group", "abc", "abcgroup"},
     "Группа XYZ": {"группа xyz", "xyz_group", "xyz", "xyzgroup"},
 }
-REQUIRED = ["Клиент", "Товар", "Дата продажи", "Кол-во", "Сумма"]
 
 
 def normalize_columns(frame: pd.DataFrame, aliases: dict[str, set[str]]) -> pd.DataFrame:
-    lookup = {str(c).strip().casefold(): c for c in frame.columns}
-    rename = {}
+    """Переименовать столбцы независимо от регистра и языка исходного набора."""
+    lookup = {str(col).strip().casefold(): col for col in frame.columns}
+    rename: dict[str, str] = {}
     for canonical, candidates in aliases.items():
         for candidate in candidates:
             original = lookup.get(candidate.casefold())
@@ -43,9 +53,13 @@ def read_csv(path: str, encoding: str, sep: str) -> pd.DataFrame:
 
 def calculate_transactions(path: str, encoding: str, sep: str) -> dict:
     df = normalize_columns(read_csv(path, encoding, sep), ALIASES)
-    missing = [c for c in REQUIRED if c not in df.columns]
+    missing = [col for col in REQUIRED if col not in df.columns]
     if missing:
-        raise SystemExit(f"Missing required columns {missing}. Available: {list(df.columns)}")
+        raise SystemExit(
+            f"Не найдены обязательные поля {missing}. Доступны: {list(df.columns)}. "
+            "Поддерживаются русские имена и trDte/clientID/item/quantity/amount."
+        )
+
     df["Дата продажи"] = pd.to_datetime(df["Дата продажи"], errors="coerce", dayfirst=True)
     for col in ["Кол-во", "Сумма"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -62,90 +76,102 @@ def calculate_transactions(path: str, encoding: str, sep: str) -> dict:
 
     zero_qty = int((df["Кол-во"] == 0).sum())
     negative_qty = int((df["Кол-во"] < 0).sum())
-    valid = df[df["Кол-во"] > 0].copy()
+    # Исключаем только нулевое количество — именно это требует методичка.
+    valid = df[df["Кол-во"] != 0].copy()
+    # Методичка предписывает округлить цену каждой транзакции до 2 знаков.
     valid["Цена"] = (valid["Сумма"] / valid["Кол-во"]).round(2)
     simple_mean = valid.groupby("Товар")["Цена"].mean()
-    weighted = (
-        (valid.assign(Взвешенная_стоимость=valid["Цена"] * valid["Кол-во"])
-         .groupby("Товар")["Взвешенная_стоимость"].sum())
-        / valid.groupby("Товар")["Кол-во"].sum()
-    )
+    weighted_cost = (valid["Цена"] * valid["Кол-во"]).groupby(valid["Товар"]).sum()
+    total_quantity = valid.groupby("Товар")["Кол-во"].sum()
+    weighted_mean = weighted_cost / total_quantity.replace(0, pd.NA)
     prices = pd.DataFrame({
         "Простая средняя цена": simple_mean,
-        "Средневзвешенная цена": weighted,
+        "Средневзвешенная цена": weighted_mean,
     }).sort_index()
 
-    metrics = {
-        "rows": len(df),
-        "dropped_incomplete_rows": raw_rows - len(df),
-        "clients_spend_le_100": int((clients["Расходы"] <= 100).sum()),
-        "one_visit_clients": int(len(one_visit)),
-        "one_visit_mean_spend": float(one_visit["Расходы"].mean()) if len(one_visit) else float("nan"),
-        "clients_visits_gt_50": int((clients["Визиты"] > 50).sum()),
-        "zero_quantity_rows": zero_qty,
-        "negative_quantity_rows": negative_qty,
-        "products_simple_mean_le_10": int((simple_mean <= 10).sum()),
+    return {
+        "transactions": df,
+        "clients": clients,
+        "prices": prices,
+        "metrics": {
+            "rows": len(df),
+            "dropped_incomplete_rows": raw_rows - len(df),
+            "clients_spend_le_100": int((clients["Расходы"] <= 100).sum()),
+            "one_visit_clients": int(len(one_visit)),
+            "one_visit_mean_spend": float(one_visit["Расходы"].mean()) if len(one_visit) else float("nan"),
+            "clients_visits_gt_50": int((clients["Визиты"] > 50).sum()),
+            "zero_quantity_rows": zero_qty,
+            "negative_quantity_rows": negative_qty,
+            "products_simple_mean_le_10": int((simple_mean <= 10).sum()),
+            "simple_mean_price_products": int(len(simple_mean)),
+        },
     }
-    out_dir = Path(path).resolve().parent
-    clients.to_csv(out_dir / "client_statistics.csv", encoding="utf-8-sig")
-    prices.to_csv(out_dir / "price_summary.csv", encoding="utf-8-sig")
-    return {"metrics": metrics, "clients": clients, "prices": prices}
 
 
 def compare_segments(path_full: str, path_recent: str, encoding: str, sep: str, output_dir: Path) -> dict:
     full = normalize_columns(read_csv(path_full, encoding, sep), SEGMENT_ALIASES)
     recent = normalize_columns(read_csv(path_recent, encoding, sep), SEGMENT_ALIASES)
-    needed = ["Товар", "Группа ABC", "Группа XYZ"]
-    for label, frame in [("full period", full), ("last six months", recent)]:
-        missing = [c for c in needed if c not in frame.columns]
+    required = ["Товар", "Группа ABC", "Группа XYZ"]
+    for label, frame in [("полный период", full), ("последние 6 месяцев", recent)]:
+        missing = [col for col in required if col not in frame.columns]
         if missing:
-            raise SystemExit(f"Missing fields in {label} segment export: {missing}")
+            raise SystemExit(f"В выгрузке сегментов ({label}) отсутствуют поля {missing}")
 
-    full = full[needed].drop_duplicates("Товар").copy()
-    recent = recent[needed].drop_duplicates("Товар").copy()
-    full["Сегмент за весь период"] = full["Группа ABC"].astype(str).str.strip() + full["Группа XYZ"].astype(str).str.strip()
-    recent["Сегмент за 6 месяцев"] = recent["Группа ABC"].astype(str).str.strip() + recent["Группа XYZ"].astype(str).str.strip()
-    both = full[["Товар", "Сегмент за весь период"]].merge(
-        recent[["Товар", "Сегмент за 6 месяцев"]], on="Товар", how="inner", validate="one_to_one"
+    full = full[required].drop_duplicates("Товар").copy()
+    recent = recent[required].drop_duplicates("Товар").copy()
+    full["Сегмент за весь период"] = (
+        full["Группа ABC"].astype(str).str.strip() + full["Группа XYZ"].astype(str).str.strip()
     )
-    changed = both[both["Сегмент за весь период"] != both["Сегмент за 6 месяцев"]].sort_values("Товар")
-    output = output_dir / "changed_abc_xyz_segments.csv"
-    changed.to_csv(output, index=False, encoding="utf-8-sig")
-    return {"common_products": len(both), "changed_products": len(changed), "file": output}
+    recent["Сегмент за 6 месяцев"] = (
+        recent["Группа ABC"].astype(str).str.strip() + recent["Группа XYZ"].astype(str).str.strip()
+    )
+    common = full[["Товар", "Сегмент за весь период"]].merge(
+        recent[["Товар", "Сегмент за 6 месяцев"]],
+        on="Товар", how="inner", validate="one_to_one"
+    )
+    changed = common[
+        common["Сегмент за весь период"] != common["Сегмент за 6 месяцев"]
+    ].sort_values("Товар")
+    out_path = output_dir / "changed_abc_xyz_segments.csv"
+    changed.to_csv(out_path, index=False, encoding="utf-8-sig")
+    return {"common_products": len(common), "changed_products": len(changed), "file": out_path}
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Practical work 3 calculations")
-    parser.add_argument("csv", help="Loginom CSV export of transaction rows")
+    parser = argparse.ArgumentParser(description="Расчёты практической работы №3 по CSV-экспорту Loginom")
+    parser.add_argument("csv", help="CSV-экспорт транзакций")
     parser.add_argument("--encoding", default="utf-8-sig")
     parser.add_argument("--sep", default=",")
-    parser.add_argument("--segments-all", help="ABC-XYZ export for the full period")
-    parser.add_argument("--segments-6m", help="ABC-XYZ export for the latest six months")
+    parser.add_argument("--segments-all", help="ABC-XYZ выгрузка полного периода")
+    parser.add_argument("--segments-6m", help="ABC-XYZ выгрузка последних шести месяцев")
     args = parser.parse_args()
 
     result = calculate_transactions(args.csv, args.encoding, args.sep)
-    metrics = result["metrics"]
+    m = result["metrics"]
+    output_dir = Path(args.csv).resolve().parent
+    result["clients"].to_csv(output_dir / "client_statistics.csv", encoding="utf-8-sig")
+    result["prices"].to_csv(output_dir / "price_summary.csv", encoding="utf-8-sig")
+
     print("ПРОВЕРКА ДАННЫХ")
-    print(f"Строк после очистки: {metrics['rows']:,}".replace(",", " "))
-    print(f"Строк с нулевым количеством: {metrics['zero_quantity_rows']}")
-    print(f"Строк с отрицательным количеством: {metrics['negative_quantity_rows']}")
+    print(f"Строк транзакций после очистки: {m['rows']:,}".replace(",", " "))
+    print(f"Строк с нулевым количеством: {m['zero_quantity_rows']}")
+    print(f"Строк с отрицательным количеством: {m['negative_quantity_rows']}")
     print("\nИНДИВИДУАЛЬНЫЕ РАСЧЁТЫ")
-    print(f"1. Клиентов с расходами <= 100 руб.: {metrics['clients_spend_le_100']}")
-    value = metrics["one_visit_mean_spend"]
-    print(f"2. Средние суммарные расходы одновизитника: {value:.2f} руб. (ответ: {round(value)})")
-    print(f"   Одновизитных клиентов: {metrics['one_visit_clients']}")
-    print(f"3. Клиентов с более чем 50 визитами: {metrics['clients_visits_gt_50']}")
-    print(f"4. Товаров со средней простой ценой <= 10 руб.: {metrics['products_simple_mean_le_10']}")
-    print("Сводки сохранены: client_statistics.csv, price_summary.csv")
+    print(f"1. Клиентов с расходами <= 100 руб.: {m['clients_spend_le_100']}")
+    val = m["one_visit_mean_spend"]
+    print(f"2. Средние суммарные расходы одного одновизитника: {val:.2f} руб. (округлённый ответ: {round(val)})")
+    print(f"   Одновизитных клиентов: {m['one_visit_clients']}")
+    print(f"3. Клиентов с более чем 50 визитами: {m['clients_visits_gt_50']}")
+    print(f"4. Товаров со средней простой ценой <= 10 руб.: {m['products_simple_mean_le_10']}")
+    print("Сохранены client_statistics.csv и price_summary.csv")
 
     if bool(args.segments_all) != bool(args.segments_6m):
-        raise SystemExit("For task 5 pass both --segments-all and --segments-6m.")
+        raise SystemExit("Для задания 5 передайте оба файла --segments-all и --segments-6m.")
     if args.segments_all:
-        comparison = compare_segments(args.segments_all, args.segments_6m, args.encoding, args.sep,
-                                      Path(args.csv).resolve().parent)
-        print(f"5. Общих товаров в двух периодах: {comparison['common_products']}")
-        print(f"   Товаров с изменившимся ABC-XYZ-сегментом: {comparison['changed_products']}")
-        print(f"   Перечень: {comparison['file']}")
+        cmp = compare_segments(args.segments_all, args.segments_6m, args.encoding, args.sep, output_dir)
+        print(f"5. Общих товаров в двух периодах: {cmp['common_products']}")
+        print(f"   Товаров с изменившимся ABC-XYZ-сегментом: {cmp['changed_products']}")
+        print(f"   Перечень: {cmp['file']}")
 
 
 if __name__ == "__main__":
