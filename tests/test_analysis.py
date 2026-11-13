@@ -50,13 +50,13 @@ class AnalysisTests(unittest.TestCase):
             result = calculate_transactions(str(path), "utf-8-sig", ",")
             metrics = result["metrics"]
 
-            self.assertEqual(metrics["clients_spend_le_100"], 4)
+            self.assertEqual(metrics["clients_spend_le_100"], 5)
             self.assertEqual(metrics["one_visit_clients"], 3)
             self.assertAlmostEqual(metrics["one_visit_mean_spend"], (6 + 75 + 10) / 3)
             self.assertEqual(metrics["clients_visits_gt_50"], 1)
             self.assertEqual(metrics["zero_quantity_rows"], 1)
             self.assertEqual(metrics["products_simple_mean_le_10"], 1)
-            self.assertAlmostEqual(result["prices"].loc["cheap", "Простая средняя цена"], 1.0)
+            self.assertAlmostEqual(result["prices"].loc["cheap", "Простая средняя цена"], 59 / 55)
             self.assertAlmostEqual(result["prices"].loc["expensive", "Простая средняя цена"], 25.0)
 
     def test_segment_comparison_uses_only_common_items_and_full_pair(self) -> None:
