@@ -58,6 +58,7 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(metrics["products_simple_mean_le_10"], 1)
             self.assertAlmostEqual(result["prices"].loc["cheap", "Простая средняя цена"], 59 / 55)
             self.assertAlmostEqual(result["prices"].loc["expensive", "Простая средняя цена"], 25.0)
+            self.assertAlmostEqual(result["prices"].loc["cheap", "Средневзвешенная цена"], 61 / 57)
 
     def test_segment_comparison_uses_only_common_items_and_full_pair(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -87,6 +88,25 @@ class AnalysisTests(unittest.TestCase):
             self.assertEqual(changes.loc[0, "Товар"], "item_a")
             self.assertEqual(changes.loc[0, "Сегмент за весь период"], "AX")
             self.assertEqual(changes.loc[0, "Сегмент за 6 месяцев"], "AZ")
+
+    def test_segment_comparison_rejects_missing_values(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            invalid = pd.DataFrame(
+                [["item_a", "A", None]],
+                columns=["Товар", "Группа ABC", "Группа XYZ"],
+            )
+            valid = pd.DataFrame(
+                [["item_a", "A", "X"]],
+                columns=["Товар", "Группа ABC", "Группа XYZ"],
+            )
+            full = root / "all.csv"
+            recent = root / "recent.csv"
+            invalid.to_csv(full, index=False, encoding="utf-8-sig")
+            valid.to_csv(recent, index=False, encoding="utf-8-sig")
+
+            with self.assertRaises(SystemExit):
+                compare_segments(str(full), str(recent), "utf-8-sig", ",", root)
 
     def test_segment_comparison_rejects_duplicate_products(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
