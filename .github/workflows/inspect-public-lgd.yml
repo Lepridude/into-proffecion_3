@@ -1,0 +1,61 @@
+name: Inspect public Loginom dataset
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-public-lgd.yml"
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download public dataset to runner temporary storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL='https://raw.githubusercontent.com/Kratosyan7/siibd-mirea/main/%D0%A0%D0%A2%204/transactions_diy.lgd'
+          curl --fail --location --retry 3 "$URL" --output /tmp/transactions_diy.lgd
+          echo "Downloaded bytes:"
+          stat -c '%s' /tmp/transactions_diy.lgd
+          echo
+          echo "File identification:"
+          file /tmp/transactions_diy.lgd
+          echo
+          echo "First 128 bytes (hex):"
+          xxd -l 128 /tmp/transactions_diy.lgd
+          echo
+          echo "Magic checks:"
+          python - <<'PY'
+          from pathlib import Path
+          import gzip, sqlite3, zipfile
+          p = Path("/tmp/transactions_diy.lgd")
+          b = p.read_bytes()
+          print("gzip:", b.startswith(b"\x1f\x8b"))
+          print("zip:", b.startswith(b"PK\x03\x04"))
+          print("sqlite:", b.startswith(b"SQLite format 3\x00"))
+          print("utf8:", end=" ")
+          try:
+              b[:4096].decode("utf-8")
+              print("yes")
+          except UnicodeDecodeError:
+              print("no")
+          try:
+              with zipfile.ZipFile(p) as z:
+                  print("zip members:", z.namelist()[:20])
+          except Exception as exc:
+              print("zip open:", type(exc).__name__)
+          try:
+              con = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+              tables = con.execute("select name from sqlite_master where type='table'").fetchall()
+              print("sqlite tables:", tables[:20])
+              con.close()
+          except Exception as exc:
+              print("sqlite open:", type(exc).__name__)
+          try:
+              raw = gzip.decompress(b)
+              print("gzip decompressed bytes:", len(raw))
+              print("decompressed prefix:", raw[:32].hex())
+          except Exception as exc:
+              print("gzip decompress:", type(exc).__name__)
+          PY
