@@ -1,0 +1,58 @@
+name: Temporary LGD layout inspection
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download public source data
+        run: |
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/Kratosyan7/siibd-mirea/main/%D0%A0%D0%A2%204/transactions_diy.lgd' --output /tmp/transactions_diy.lgd
+      - name: Inspect container structure
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import math, re, struct
+          p = Path('/tmp/transactions_diy.lgd')
+          b = p.read_bytes()
+          print('SIZE', len(b))
+          print('HEADER_512', b[:512].hex())
+          for name, magic in {
+              'lz4_frame': bytes.fromhex('04224d18'),
+              'gzip': bytes.fromhex('1f8b'),
+              'zlib_1': bytes.fromhex('789c'),
+              'zlib_2': bytes.fromhex('78da'),
+              'zlib_3': bytes.fromhex('7801'),
+              'zstd': bytes.fromhex('28b52ffd'),
+          }.items():
+              offsets=[]
+              pos=0
+              while True:
+                  pos=b.find(magic,pos)
+                  if pos<0: break
+                  offsets.append(pos); pos+=1
+                  if len(offsets)>=30: break
+              print('MAGIC',name,offsets)
+          print('UTF16_STRINGS')
+          decoded=b.decode('utf-16le',errors='ignore')
+          seen=[]
+          for s in re.findall(r'[ -~А-Яа-яЁё]{3,}', decoded):
+              if s not in seen:
+                  seen.append(s)
+              if len(seen)>=150: break
+          print('\n'.join(seen))
+          print('ASCII_STRINGS')
+          import subprocess
+          out=subprocess.run(['strings','-n','4',str(p)],capture_output=True,text=True).stdout.splitlines()
+          print('\n'.join(out[:120]))
+          print('WINDOW_ENTROPY')
+          for start in range(0,len(b),1024*1024):
+              chunk=b[start:start+1024*1024]
+              freq=[chunk.count(bytes([i]))/len(chunk) for i in range(256)]
+              h=-sum(x*math.log2(x) for x in freq if x)
+              print(start, len(chunk), round(h,4))
+          print('TAIL_1024', b[-1024:].hex())
+          PY
