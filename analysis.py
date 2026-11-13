@@ -63,7 +63,7 @@ def calculate_transactions(path: str, encoding: str, sep: str) -> dict:
     zero_qty = int((df["Кол-во"] == 0).sum())
     negative_qty = int((df["Кол-во"] < 0).sum())
     valid = df[df["Кол-во"] > 0].copy()
-    valid["Цена"] = valid["Сумма"] / valid["Кол-во"]
+    valid["Цена"] = (valid["Сумма"] / valid["Кол-во"]).round(2)
     simple_mean = valid.groupby("Товар")["Цена"].mean()
     weighted = (
         (valid.assign(Взвешенная_стоимость=valid["Цена"] * valid["Кол-во"])
